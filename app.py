@@ -107,8 +107,8 @@ try:
 except FileNotFoundError:
     st.warning("Arquivo 'produtos.xlsx' não encontrado. Usando dados de exemplo.")
     produtos_df = pd.DataFrame({
-        "Produto": ["Ração Crescimento", "Ração Engorda", "Sal Mineral", "Ração Núcleo"],
-        "Valor": [75.50, 82.00, 55.90, 120.00]
+        "Produto": ["Ração Crescimento", "Ração Engorda", "Sal Mineral", "Ração Núcleo", "Convert +@ 1GR"],
+        "Valor": [75.50, 82.00, 55.90, 120.00, 86.32]
     })
 
 # --- 3️⃣ Inicializar DataFrame na sessão ---
@@ -123,7 +123,7 @@ st.subheader("📝 Adicionar Item")
 with st.form("form_item", clear_on_submit=True):
     # Busca de produtos com suporte a busca sem acento
     produtos_lista = produtos_df["Produto"].tolist()
-    busca_produto = st.text_input("Buscar produto")
+    busca_produto = st.text_input("Buscar produto (digite para filtrar)")
     
     if busca_produto:
         # Normalizar busca e produtos para comparação sem acentos
@@ -295,12 +295,15 @@ if st.button("📄 Gerar PDF do Orçamento", use_container_width=True, type="pri
         data = [["Produto", "Valor Unitário", "Quantidade", "Total"]]
         
         for _, row in st.session_state.df_calc.iterrows():
-            valor_unitario = row['Total'] / row['Quantidade']
+            # Calcular o valor unitário proporcional ao prazo selecionado
+            proporcao_prazo = valor_prazo_selecionado / total_produtos if total_produtos > 0 else 1
+            valor_unitario_prazo = (row['Total'] / row['Quantidade']) * proporcao_prazo
+            
             data.append([
                 row['Produto'],
-                br_real(valor_unitario),
+                br_real(valor_unitario_prazo),
                 f"{int(row['Quantidade'])} saco(s)",
-                br_real(row['Total'])
+                br_real(row['Total'] * proporcao_prazo)
             ])
         
         # Adicionar linha do total para o prazo selecionado
