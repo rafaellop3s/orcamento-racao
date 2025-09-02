@@ -5,6 +5,9 @@ from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet
+import locale
+import unicodedata
+from datetime import datetime
 
 # --- SISTEMA DE AUTENTICAÇÃO ---
 SENHA_CORRETA = "racao123"  # Troque para a senha que vocês vão combinar
@@ -33,9 +36,22 @@ if not st.session_state.logado:
     st.stop()
 
 # --- CONFIGURAÇÃO PRINCIPAL (APÓS LOGIN) ---
+# --- Configurar local para português do Brasil ---
+try:
+    locale.setlocale(locale.LC_ALL, 'pt_BR.UTF-8')
+except locale.Error:
+    locale.setlocale(locale.LC_ALL, 'Portuguese_Brazil.1252')
+
 # --- Função para formatar valores em R$ ---
 def br_real(valor):
     return f"R$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+# --- Função para remover acentos ---
+def remover_acentos(texto):
+    if not texto:
+        return texto
+    return ''.join(c for c in unicodedata.normalize('NFD', texto) 
+                  if unicodedata.category(c) != 'Mn')
 
 # --- Configuração da página mobile-friendly ---
 st.set_page_config(
@@ -89,32 +105,46 @@ with col2:
     st.image("https://cdn-icons-png.flaticon.com/512/1005/1005141.png", width=80)
     st.title("📊 Sistema de Orçamentos")
 
-# --- 1️⃣ Carregar ou criar planilha de produtos ---
+# --- 1️⃣ Campo para nome do cliente ---
+cliente = st.text_input("Nome do Cliente")
+
+# --- 2️⃣ Carregar ou criar planilha de produtos ---
 try:
     produtos_df = pd.read_excel("produtos.xlsx")
 except FileNotFoundError:
     st.warning("Arquivo 'produtos.xlsx' não encontrado. Usando dados de exemplo.")
     produtos_df = pd.DataFrame({
-        "Produto": ["Ração Crescimento", "Ração Engorda", "Sal Mineral"],
-        "Valor": [75.50, 82.00, 55.90]
+        "Produto": ["Ração Crescimento", "Ração Engorda", "Sal Mineral", "Ração Núcleo"],
+        "Valor": [75.50, 82.00, 55.90, 120.00]
     })
 
-with st.expander("📄 Produtos Disponíveis"):
-    st.dataframe(produtos_df, use_container_width=True)
-
-# --- 2️⃣ Inicializar DataFrame na sessão ---
+# --- 3️⃣ Inicializar DataFrame na sessão ---
 if "df_calc" not in st.session_state:
     st.session_state.df_calc = pd.DataFrame(columns=[
         "Produto", "Valor", "Frete", "Quantidade", "Desconto", 
         "Frete Total", "Desconto por item", "Total"
     ])
 
-# --- 3️⃣ Formulário para adicionar item (mobile optimized) ---
+# --- 4️⃣ Formulário para adicionar item (mobile optimized) ---
 st.subheader("📝 Adicionar Item")
 with st.form("form_item", clear_on_submit=True):
+    # Busca de produtos com suporte a busca sem acento
+    produtos_lista = produtos_df["Produto"].tolist()
+    busca_produto = st.text_input("Buscar produto")
+    
+    if busca_produto:
+        # Normalizar busca e produtos para comparação sem acentos
+        busca_sem_acento = remover_acentos(busca_produto.lower())
+        produtos_filtrados = [
+            p for p in produtos_lista 
+            if busca_sem_acento in remover_acentos(p.lower())
+        ]
+    else:
+        produtos_filtrados = produtos_lista
+    
     col1, col2 = st.columns(2)
     with col1:
-        produto_selecionado = st.selectbox("Produto", produtos_df["Produto"], key="produto_select")
+        produto_selecionado = st.selectbox("Produto", produtos_filtrados, key="produto_select")
         quantidade = st.number_input("Quantidade (sacos)", min_value=1, value=1, key="qtd_input")
     with col2:
         frete = st.number_input("Frete por produto (R$)", min_value=0.0, value=0.0, step=0.5, key="frete_input")
@@ -139,7 +169,7 @@ if submitted:
     st.success(f"✅ '{produto_selecionado}' adicionado!")
     st.rerun()
 
-# --- 4️⃣ Mostrar tabela cumulativa ---
+# --- 5️⃣ Mostrar tabela cumulativa ---
 if not st.session_state.df_calc.empty:
     st.subheader("📊 Itens do Orçamento")
     
@@ -237,30 +267,53 @@ df_prazos = pd.DataFrame(tabela_prazos, columns=["Condição", "Valor Total", "P
 st.subheader("📅 Condições de Pagamento")
 st.dataframe(df_prazos, use_container_width=True, hide_index=True)
 
-# --- 5️⃣ Botão para gerar PDF premium ---
+# --- 6️⃣ Seleção de prazo para PDF ---
+st.subheader("📄 Configurações do PDF")
+prazo_selecionado = st.selectbox(
+    "Selecione o prazo para o PDF:",
+    options=["A VISTA", "PRAZO 30", "PRAZO 60", "PRAZO 15/45", "PRAZO 30/60", "PRAZO 30/60/90"],
+    index=0
+)
+
+# --- 7️⃣ Botão para gerar PDF premium ---
 if st.button("📄 Gerar PDF do Orçamento", use_container_width=True, type="primary"):
     if st.session_state.df_calc.empty:
         st.warning("Não há itens no orçamento para gerar PDF.")
+    elif not cliente:
+        st.warning("Por favor, informe o nome do cliente.")
     else:
+        # Encontrar o valor total para o prazo selecionado
+        valor_prazo_selecionado = next(
+            (c["valor_final"] for c in condicoes if c["tipo"] == prazo_selecionado),
+            total_produtos
+        )
+        
         buffer = BytesIO()
         doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=18)
         elements = []
         styles = getSampleStyleSheet()
         
         # Título
-        title = Paragraph("<b>Orçamento - Fábrica de Ração</b>", styles['Title'])
+        title = Paragraph(f"<b>Orçamento - {cliente}</b>", styles['Title'])
         elements.append(title)
         elements.append(Spacer(1, 20))
         
-        # Preparar dados da tabela principal
-        df_display_pdf = st.session_state.df_calc.copy()
-        for col in ["Valor", "Frete", "Frete Total", "Desconto por item", "Total"]:
-            df_display_pdf[col] = df_display_pdf[col].apply(br_real)
-        df_display_pdf["Quantidade"] = df_display_pdf["Quantidade"].apply(lambda x: f"{x} saco(s)")
-        df_display_pdf["Desconto"] = df_display_pdf["Desconto"].apply(lambda x: f"{x}%")
+        # Preparar dados da tabela principal simplificada
+        data = [["Produto", "Valor Unitário", "Quantidade", "Total"]]
+        
+        for _, row in st.session_state.df_calc.iterrows():
+            valor_unitario = row['Total'] / row['Quantidade']
+            data.append([
+                row['Produto'],
+                br_real(valor_unitario),
+                f"{int(row['Quantidade'])} saco(s)",
+                br_real(row['Total'])
+            ])
+        
+        # Adicionar linha do total para o prazo selecionado
+        data.append(["", "", "TOTAL (" + prazo_selecionado + "):", br_real(valor_prazo_selecionado)])
         
         # Criar tabela
-        data = [list(df_display_pdf.columns)] + df_display_pdf.values.tolist()
         tabela = Table(data, hAlign='CENTER', repeatRows=1)
         
         # Estilo da tabela
@@ -270,70 +323,35 @@ if st.button("📄 Gerar PDF do Orçamento", use_container_width=True, type="pri
             ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
             ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
             ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, -1), 8),
-            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.whitesmoke, colors.lightgrey]),
+            ('FONTSIZE', (0, 0), (-1, -1), 9),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -2), [colors.whitesmoke, colors.lightgrey]),
+            ('BACKGROUND', (0, -1), (-1, -1), colors.lightgreen),
+            ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
         ])
-        
-        # Destacar itens com valor alto
-        for i, row in st.session_state.df_calc.iterrows():
-            if row['Total'] > 1000:
-                tabela_style.add('BACKGROUND', (0, i + 1), (-1, i + 1), colors.lightcoral)
-                tabela_style.add('TEXTCOLOR', (0, i + 1), (-1, i + 1), colors.whitesmoke)
         
         tabela.setStyle(tabela_style)
         elements.append(tabela)
         elements.append(Spacer(1, 20))
         
-        # Total geral
-        total_paragraph = Paragraph(f"<b>Total Geral (à vista): {br_real(total_produtos)}</b>", styles['Heading2'])
-        elements.append(total_paragraph)
-        
         # Informações adicionais
-        elements.append(Spacer(1, 10))
-        elements.append(Paragraph(f"<b>Quantidade Total: {quantidade_total} saco(s)</b>", styles['Normal']))
-        elements.append(Paragraph(f"<b>Frete Total: {br_real(frete_total)}</b>", styles['Normal']))
-        
-        # Condições de pagamento
-        elements.append(Spacer(1, 20))
-        elements.append(Paragraph("<b>Condições de Pagamento</b>", styles['Heading2']))
-        
-        data_prazos_pdf = [["Condição", "Valor Total", "Parcela(s)"]]
-        for c in condicoes:
-            valor_total = c["valor_final"]
-            num_parcelas = c["parcelas"]
-            if num_parcelas > 1:
-                valor_parcela = valor_total / num_parcelas
-                texto_parcelas = f"{num_parcelas} x {br_real(valor_parcela)}"
-            else:
-                texto_parcelas = br_real(valor_total)
-            data_prazos_pdf.append([c["tipo"], br_real(valor_total), texto_parcelas])
-        
-        tabela_pdf = Table(data_prazos_pdf, hAlign='CENTER', repeatRows=1)
-        tabela_pdf.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.green),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, -1), 9),
-            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.whitesmoke, colors.lightgrey]),
-        ]))
-        elements.append(tabela_pdf)
-        
-        # Rodapé
-        elements.append(Spacer(1, 20))
-        footer = Paragraph("Orçamento gerado automaticamente - Fábrica de Ração", styles['Normal'])
-        elements.append(footer)
+        data_envio = datetime.now().strftime("%d/%m/%Y %H:%M")
+        elements.append(Paragraph(f"<b>Data envio: {data_envio}</b>", styles['Normal']))
+        elements.append(Paragraph("<b>* Validade da proposta 5 dias</b>", styles['Normal']))
+        elements.append(Paragraph("<b>* Os Preços podem sofrer alterações sem aviso prévio</b>", styles['Normal']))
         
         # Gerar PDF
         doc.build(elements)
         buffer.seek(0)
         
+        # Nome do arquivo com data atual
+        data_arquivo = datetime.now().strftime("%d-%m-%Y")
+        nome_arquivo = f"Orcamento_{cliente}_{data_arquivo}.pdf"
+        
         # Botão de download
         st.download_button(
             label="⬇️ Baixar PDF do Orçamento",
             data=buffer,
-            file_name="orcamento.pdf",
+            file_name=nome_arquivo,
             mime="application/pdf",
             use_container_width=True
         )
