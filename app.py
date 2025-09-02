@@ -5,7 +5,6 @@ from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet
-import locale
 import unicodedata
 from datetime import datetime
 
@@ -36,12 +35,6 @@ if not st.session_state.logado:
     st.stop()
 
 # --- CONFIGURAÇÃO PRINCIPAL (APÓS LOGIN) ---
-# --- Configurar local para português do Brasil ---
-try:
-    locale.setlocale(locale.LC_ALL, 'pt_BR.UTF-8')
-except locale.Error:
-    locale.setlocale(locale.LC_ALL, 'Portuguese_Brazil.1252')
-
 # --- Função para formatar valores em R$ ---
 def br_real(valor):
     return f"R$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
@@ -345,7 +338,9 @@ if st.button("📄 Gerar PDF do Orçamento", use_container_width=True, type="pri
         
         # Nome do arquivo com data atual
         data_arquivo = datetime.now().strftime("%d-%m-%Y")
-        nome_arquivo = f"Orcamento_{cliente}_{data_arquivo}.pdf"
+        # Remover caracteres inválidos do nome do cliente para nome de arquivo
+        cliente_sanitizado = "".join(c for c in cliente if c.isalnum() or c in (' ', '-', '_')).rstrip()
+        nome_arquivo = f"Orcamento_{cliente_sanitizado}_{data_arquivo}.pdf"
         
         # Botão de download
         st.download_button(
