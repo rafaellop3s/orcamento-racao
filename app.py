@@ -282,13 +282,42 @@ if st.button("📄 Gerar PDF do Orçamento", use_container_width=True, type="pri
             use_container_width=True
         )
         
-        # --- Link WhatsApp ---
-        whatsapp_msg = f"https://wa.me/?text=Segue o orçamento: {nome_arquivo}"
-        st.markdown(f"[📲 Compartilhar no WhatsApp]({whatsapp_msg})", unsafe_allow_html=True)
-        
-        st.success("PDF gerado com sucesso!")
+                # --- Botão de compartilhamento nativo (Web Share API) ---
+        compartilhar_code = f"""
+        <script>
+        function compartilharPDF() {{
+            if (navigator.share) {{
+                navigator.share({{
+                    title: 'Orçamento',
+                    text: 'Segue o orçamento gerado.',
+                    url: '{nome_arquivo}'
+                }})
+                .then(() => console.log('Compartilhado com sucesso'))
+                .catch((error) => console.log('Erro ao compartilhar:', error));
+            }} else {{
+                alert('Compartilhamento não suportado neste dispositivo.');
+            }}
+        }}
+        </script>
+        <button onclick="compartilharPDF()" style="
+            background-color:#25D366;
+            color:white;
+            border:none;
+            padding:10px 20px;
+            font-size:16px;
+            border-radius:10px;
+            cursor:pointer;
+            width:100%;
+            margin-top:10px;">
+        📤 Compartilhar Orçamento
+        </button>
+        """
+
+        st.markdown(compartilhar_code, unsafe_allow_html=True)
+
 
 # --- Logout ---
 if st.button("🚪 Sair do Sistema", type="secondary", use_container_width=True):
     st.session_state.logado = False
     st.rerun()
+
