@@ -209,7 +209,7 @@ prazo_selecionado = st.selectbox(
 )
 
 # --- Gerar PDF ---
-if st.button("📄 Gerar PDF do Orçamento", use_container_width=True, type="primary"):
+if st.button("📄 Gerar PDF", use_container_width=True, type="primary"):
     if st.session_state.df_calc.empty:
         st.warning("Não há itens no orçamento para gerar PDF.")
     elif not cliente:
@@ -326,3 +326,4 @@ if st.button("📄 Gerar PDF do Orçamento", use_container_width=True, type="pri
 if st.button("🚪 Sair", type="secondary", use_container_width=True):
     st.session_state.logado = False
     st.rerun()
+
