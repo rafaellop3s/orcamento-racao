@@ -24,7 +24,7 @@ if not st.session_state.logado:
         st.image("https://cdn-icons-png.flaticon.com/512/1005/1005141.png", width=100)
         senha = st.text_input("Senha de acesso:", type="password", key="senha_input")
         
-        if st.button("👉 Entrar no Sistema", use_container_width=True, type="primary"):
+        if st.button("👉 Orçamento Convert", use_container_width=True, type="primary"):
             if senha == SENHA_CORRETA:
                 st.session_state.logado = True
                 st.rerun()
@@ -40,7 +40,7 @@ def br_real(valor):
 
 # --- Configuração da página ---
 st.set_page_config(
-    page_title="Orçamento - Fábrica de Ração", 
+    page_title="Orçamento Convert", 
     layout="wide",
     initial_sidebar_state="collapsed"
 )
@@ -69,10 +69,10 @@ st.markdown("""
 col1, col2, col3 = st.columns([1, 2, 1])
 with col2:
     st.image("https://cdn-icons-png.flaticon.com/512/1005/1005141.png", width=80)
-    st.title("📊 Sistema de Orçamentos")
+    st.title("📊 Orçamento Convert")
 
 # --- 1️⃣ Nome do cliente ---
-cliente = st.text_input("Nome do Cliente")
+cliente = st.text_input("👤 Cliente", placeholder="Digite o nome do cliente")
 
 # --- 2️⃣ Produtos ---
 try:
@@ -96,32 +96,45 @@ st.subheader("📝 Adicionar Item")
 with st.form("form_item", clear_on_submit=True):
     produtos_lista = produtos_df["Produto"].tolist()
     
-    col1, col2 = st.columns(2)
+    col1, col2, col3 = st.columns(3)
     with col1:
-        produto_selecionado = st.selectbox("Produto", produtos_lista, key="produto_select")
-        quantidade = st.number_input("Quantidade (sacos)", min_value=1, value=1, key="qtd_input")
+        produto_selecionado = st.selectbox("Produto", [""] + produtos_lista, key="produto_select")
     with col2:
+        quantidade = st.number_input("Quantidade (sacos)", min_value=1, value=None, placeholder="Quantidade", key="qtd_input")
+    with col3:
         frete = st.number_input("Frete por produto (R$)", min_value=0.0, value=0.0, step=0.5, key="frete_input")
+    
+    col4, col5, col6 = st.columns(3)
+    with col4:
         desconto = st.number_input("Desconto (%)", min_value=0.0, max_value=100.0, value=0.0, step=0.5, key="desconto_input")
+    with col5:
+        descarregamento = st.number_input("Descarregamento (R$)", min_value=0.0, value=0.0, step=0.5, key="descarregamento_input")
     
     submitted = st.form_submit_button("➕ Adicionar Item", use_container_width=True)
 
 if submitted:
-    valor = float(produtos_df.loc[produtos_df["Produto"] == produto_selecionado, "Valor"].iloc[0])
-    total_item = (valor * quantidade) + (frete * quantidade) - (valor * (desconto / 100) * quantidade)
-    new_row = {
-        "Produto": produto_selecionado,
-        "Valor": valor,
-        "Frete": frete,
-        "Quantidade": quantidade,
-        "Desconto": desconto,
-        "Frete Total": frete * quantidade,
-        "Desconto por item": valor * (desconto / 100) * quantidade,
-        "Total": total_item
-    }
-    st.session_state.df_calc = pd.concat([st.session_state.df_calc, pd.DataFrame([new_row])], ignore_index=True)
-    st.success(f"✅ '{produto_selecionado}' adicionado!")
-    st.rerun()
+    if not produto_selecionado:
+        st.error("Selecione um produto!")
+    elif not quantidade:
+        st.error("Informe a quantidade!")
+    else:
+        valor = float(produtos_df.loc[produtos_df["Produto"] == produto_selecionado, "Valor"].iloc[0])
+        total_item = (valor * quantidade) + (frete * quantidade) + (descarregamento * quantidade) - (valor * (desconto / 100) * quantidade)
+        new_row = {
+            "Produto": produto_selecionado,
+            "Valor": valor,
+            "Frete": frete,
+            "Descarregamento": descarregamento,
+            "Quantidade": quantidade,
+            "Desconto": desconto,
+            "Frete Total": frete * quantidade,
+            "Descarregamento Total": descarregamento * quantidade,
+            "Desconto por item": valor * (desconto / 100) * quantidade,
+            "Total": total_item
+        }
+        st.session_state.df_calc = pd.concat([st.session_state.df_calc, pd.DataFrame([new_row])], ignore_index=True)
+        st.success(f"✅ '{produto_selecionado}' adicionado!")
+        st.rerun()
 
 # --- 5️⃣ Tabela cumulativa ---
 if not st.session_state.df_calc.empty:
@@ -129,13 +142,13 @@ if not st.session_state.df_calc.empty:
     
     if st.button("🗑️ Limpar Todos os Itens", type="secondary", use_container_width=True):
         st.session_state.df_calc = pd.DataFrame(columns=[
-            "Produto", "Valor", "Frete", "Quantidade", "Desconto", 
-            "Frete Total", "Desconto por item", "Total"
+            "Produto", "Valor", "Frete", "Descarregamento", "Quantidade", "Desconto", 
+            "Frete Total", "Descarregamento Total", "Desconto por item", "Total"
         ])
         st.rerun()
     
     df_display = st.session_state.df_calc.copy()
-    for col in ["Valor", "Frete", "Frete Total", "Desconto por item", "Total"]:
+    for col in ["Valor", "Frete", "Descarregamento", "Frete Total", "Descarregamento Total", "Desconto por item", "Total"]:
         df_display[col] = df_display[col].apply(lambda x: f"{x:.2f}")
     df_display["Quantidade"] = df_display["Quantidade"].apply(lambda x: f"{x} saco(s)")
     df_display["Desconto"] = df_display["Desconto"].apply(lambda x: f"{x}%")
@@ -146,6 +159,7 @@ if not st.session_state.df_calc.empty:
 total_produtos = st.session_state.df_calc['Total'].sum() if not st.session_state.df_calc.empty else 0
 quantidade_total = st.session_state.df_calc['Quantidade'].sum() if not st.session_state.df_calc.empty else 0
 frete_total = st.session_state.df_calc['Frete Total'].sum() if not st.session_state.df_calc.empty else 0
+descarregamento_total = st.session_state.df_calc['Descarregamento Total'].sum() if not st.session_state.df_calc.empty else 0
 
 # --- Funções de cálculo (mantidas iguais) ---
 def coeficiente_por_prazo(prazo, quantidade_total):
@@ -185,26 +199,11 @@ condicoes = [
     {"tipo": "PRAZO 30/60/90", "valor_final": calcular_valor_prazo(total_produtos, "30/60/90", quantidade_total), "parcelas": 3},
 ]
 
-tabela_prazos = []
-for c in condicoes:
-    valor_total = c["valor_final"]
-    num_parcelas = c["parcelas"]
-    if num_parcelas > 1:
-        valor_parcela = valor_total / num_parcelas
-        texto_parcelas = f"{num_parcelas} x {br_real(valor_parcela)}"
-    else:
-        texto_parcelas = br_real(valor_total)
-    tabela_prazos.append([c["tipo"], br_real(valor_total), texto_parcelas])
-
 st.metric(label="💰 Total Geral (à vista)", value=br_real(total_produtos))
-df_prazos = pd.DataFrame(tabela_prazos, columns=["Condição", "Valor Total", "Parcela(s)"])
-st.subheader("📅 Condições de Pagamento")
-st.dataframe(df_prazos, use_container_width=True, hide_index=True)
 
 # --- Seleção de prazo ---
-st.subheader("📄 Configurações do PDF")
 prazo_selecionado = st.selectbox(
-    "Selecione o prazo para o PDF:",
+    "Selecione a forma de pagamento desejada:",
     options=["A VISTA", "PRAZO 30", "PRAZO 60", "PRAZO 15/45", "PRAZO 30/60", "PRAZO 30/60/90"],
     index=0
 )
@@ -226,10 +225,12 @@ if st.button("📄 Gerar PDF do Orçamento", use_container_width=True, type="pri
         elements = []
         styles = getSampleStyleSheet()
         
-        title = Paragraph(f"<b>Orçamento - {cliente}</b>", styles['Title'])
+        title = Paragraph(f"<b>Orçamento</b>", styles['Title'])
         elements.append(title)
+        elements.append(Paragraph(f"<b>Cliente: {cliente}</b>", styles['Heading2']))
         elements.append(Spacer(1, 20))
         
+        # Preparar dados da tabela
         data = [["Produto", "Valor Unitário", "Quantidade", "Total"]]
         for _, row in st.session_state.df_calc.iterrows():
             proporcao_prazo = valor_prazo_selecionado / total_produtos if total_produtos > 0 else 1
@@ -243,11 +244,16 @@ if st.button("📄 Gerar PDF do Orçamento", use_container_width=True, type="pri
         
         data.append(["", "", "TOTAL (" + prazo_selecionado + "):", br_real(valor_prazo_selecionado)])
         
-        tabela = Table(data, hAlign='CENTER', repeatRows=1)
+        # Criar tabela com largura máxima
+        table_width = A4[0] - 60  # Largura da página menos margens
+        col_widths = [table_width * 0.4, table_width * 0.2, table_width * 0.2, table_width * 0.2]
+        
+        tabela = Table(data, colWidths=col_widths, hAlign='CENTER', repeatRows=1)
         tabela_style = TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), colors.darkblue),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
             ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
             ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
             ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
             ('FONTSIZE', (0, 0), (-1, -1), 9),
@@ -266,6 +272,7 @@ if st.button("📄 Gerar PDF do Orçamento", use_container_width=True, type="pri
         elements.append(Paragraph(f"<b>Data envio: {data_envio}</b>", styles['Normal']))
         elements.append(Paragraph("<b>* Validade da proposta 5 dias</b>", styles['Normal']))
         elements.append(Paragraph("<b>* Os Preços podem sofrer alterações sem aviso prévio</b>", styles['Normal']))
+        elements.append(Paragraph('<font color="blue"><b>* Orçamento pendente de análise.</b></font>', styles['Normal']))
         
         doc.build(elements)
         buffer.seek(0)
@@ -275,14 +282,14 @@ if st.button("📄 Gerar PDF do Orçamento", use_container_width=True, type="pri
         nome_arquivo = f"Orcamento_{cliente_sanitizado}_{data_arquivo}.pdf"
         
         st.download_button(
-            label="⬇️ Baixar PDF do Orçamento",
+            label="⬇️ Baixar PDF",
             data=buffer,
             file_name=nome_arquivo,
             mime="application/pdf",
             use_container_width=True
         )
         
-                # --- Botão de compartilhamento nativo (Web Share API) ---
+        # --- Botão de compartilhamento nativo (Web Share API) ---
         compartilhar_code = f"""
         <script>
         function compartilharPDF() {{
@@ -315,9 +322,7 @@ if st.button("📄 Gerar PDF do Orçamento", use_container_width=True, type="pri
 
         st.markdown(compartilhar_code, unsafe_allow_html=True)
 
-
-# --- Logout ---
-if st.button("🚪 Sair do Sistema", type="secondary", use_container_width=True):
+# --- Sair ---
+if st.button("🚪 Sair", type="secondary", use_container_width=True):
     st.session_state.logado = False
     st.rerun()
-
